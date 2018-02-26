@@ -9,7 +9,7 @@ RUN apk --update add curl
 RUN for i in ${CROSS_ARCHS}; do curl -L https://github.com/multiarch/qemu-user-static/releases/download/v${QEMU_VERSION}/qemu-${i}-static.tar.gz | tar zxvf - -C /usr/bin; done
 RUN chmod +x /usr/bin/qemu-*
 
-FROM ppc64le/alpine:3.6
+FROM arm64v8/alpine:3.6
 MAINTAINER Shaun Crampton <shaun@tigera.io>
 
 # Enable non-native builds of this image on an amd64 hosts.
@@ -26,7 +26,7 @@ ADD typha.cfg /etc/calico/typha.cfg
 # Put out binary in /code rather than directly in /usr/bin.  This allows the downstream builds
 # to more easily extract the build artefacts from the container.
 RUN mkdir /code
-ADD bin/calico-typha-ppc64le /code/calico-typha
+ADD bin/calico-typha-arm64 /code/calico-typha
 RUN ln -s /code/calico-typha /usr/bin
 
 # Run Typha by default

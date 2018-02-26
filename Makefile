@@ -1,17 +1,37 @@
 ###############################################################################
-# The build architecture is select by setting the ARCH variable.
-# For example: When building on ppc64le you could use ARCH=ppc64le make <....>.
-# When ARCH is undefined it defaults to amd64.
-ARCH?=amd64
-ifeq ($(ARCH),amd64)
-	ARCHTAG?=
-	GO_BUILD_VER?=v0.9
+# Both native and cross architecture builds are supported.
+# The target architecture is select by setting the ARCH variable.
+# When ARCH is undefined it is set to the detected host architecture.
+# When ARCH differs from the host architecture a crossbuild will be performed.
+
+# BUILDARCH is the host architecture
+# ARCH is the target architecture
+# we need to keep track of them separately
+BUILDARCH ?= $(shell uname -m)
+
+# canonicalized names for host architecture
+ifeq ($(BUILDARCH),aarch64)
+	BUILDARCH=arm64
+endif
+ifeq ($(BUILDARCH),x86_64)
+	BUILDARCH=amd64
 endif
 
-ifeq ($(ARCH),ppc64le)
-	ARCHTAG:=-ppc64le
-	GO_BUILD_VER?=latest
+# unless otherwise set, I am building for my own architecture, i.e. not cross-compiling
+ARCH ?= $(BUILDARCH)
+
+# canonicalized names for target architecture
+ifeq ($(ARCH),aarch64)
+override ARCH=arm64
 endif
+ifeq ($(ARCH),x86_64)
+override ARCH=amd64
+endif
+
+GO_BUILD_VER ?= latest
+# for building, we use the go-build image for the *host* architecture, even if the target is different
+# the one for the host should contain all the necessary cross-compilation tools
+GO_BUILD_CONTAINER = calico/go-build:$(GO_BUILD_VER)-$(BUILDARCH)
 
 help:
 	@echo "Typha Makefile"
@@ -47,7 +67,19 @@ help:
 all: calico/typha bin/typha-client-$(ARCH)
 test: ut
 
-GO_BUILD_CONTAINER?=calico/go-build$(ARCHTAG):$(GO_BUILD_VER)
+# Targets used when cross building.
+.PHONY: native register
+native:
+ifneq ($(BUILDARCH),$(ARCH))
+	@echo "Target $(MAKECMDGOALS)" is not supported when cross building! && false
+endif
+
+# Enable binfmt adding support for miscellaneous binary formats.
+# This is only needed when running non-native binaries.
+register:
+ifneq ($(BUILDARCH),$(ARCH))
+	docker run --rm --privileged multiarch/qemu-user-static:register --reset
+endif
 
 # Figure out version information.  To support builds from release tarballs, we default to
 # <unknown> if this isn't a git checkout.
@@ -73,11 +105,11 @@ MY_GID:=$(shell id -g)
 
 # Build the calico/typha docker image, which contains only Typha.
 .PHONY: calico/typha
-calico/typha: bin/calico-typha-$(ARCH)
+calico/typha: bin/calico-typha-$(ARCH) register
 	rm -rf docker-image/bin
 	mkdir -p docker-image/bin
 	cp bin/calico-typha-$(ARCH) docker-image/bin/
-	docker build --pull -t calico/typha$(ARCHTAG) docker-image -f docker-image/Dockerfile$(ARCHTAG)
+	docker build --pull -t calico/typha:latest-$(ARCH) docker-image -f docker-image/Dockerfile-$(ARCH)
 
 # Pre-configured docker run command that runs as this user with the repo
 # checked out to /code, uses the --rm flag to avoid leaving the container
@@ -100,6 +132,7 @@ DOCKER_GO_BUILD := mkdir -p .go-pkg-cache && \
                               -v $${PWD}:/go/src/github.com/projectcalico/typha:rw \
                               -v $${PWD}/.go-pkg-cache:/go/pkg:rw \
                               -w /go/src/github.com/projectcalico/typha \
+                              -e GOARCH=$(ARCH) \
                               $(GO_BUILD_CONTAINER)
 
 # Update the vendored dependencies with the latest upstream versions matching
@@ -168,7 +201,7 @@ check-licenses/dependency-licenses.txt: vendor/.up-to-date
 	                          mv check-licenses/dependency-licenses.tmp check-licenses/dependency-licenses.txt'
 
 .PHONY: ut
-ut combined.coverprofile: vendor/.up-to-date $(TYPHA_GO_FILES)
+ut combined.coverprofile: native vendor/.up-to-date $(TYPHA_GO_FILES)
 	@echo Running Go UTs.
 	$(DOCKER_GO_BUILD) ./utils/run-coverage
 
@@ -196,22 +229,22 @@ go-meta-linter: vendor/.up-to-date $(GENERATED_GO_FILES)
 static-checks:
 	$(MAKE) go-meta-linter check-licenses
 
-.PHONY: ut-no-cover
+.PHONY: ut-no-cover native
 ut-no-cover: vendor/.up-to-date $(TYPHA_GO_FILES)
 	@echo Running Go UTs without coverage.
 	$(DOCKER_GO_BUILD) ginkgo -r $(GINKGO_OPTIONS)
 
-.PHONY: ut-watch
+.PHONY: ut-watch native
 ut-watch: vendor/.up-to-date $(TYPHA_GO_FILES)
 	@echo Watching go UTs for changes...
 	$(DOCKER_GO_BUILD) ginkgo watch -r $(GINKGO_OPTIONS)
 
 # Launch a browser with Go coverage stats for the whole project.
-.PHONY: cover-browser
+.PHONY: cover-browser native
 cover-browser: combined.coverprofile
 	go tool cover -html="combined.coverprofile"
 
-.PHONY: cover-report
+.PHONY: cover-report native
 cover-report: combined.coverprofile
 	# Print the coverage.  We use sed to remove the verbose prefix and trim down
 	# the whitespace.
@@ -282,6 +315,7 @@ continue-release:
 	# new tag.
 	$(MAKE) release-once-tagged
 
+# TODO remove all references to ARCHTAG, How should we handle the image name change?
 release-once-tagged:
 	@echo
 	@echo "Will now build release artifacts..."
