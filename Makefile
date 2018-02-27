@@ -109,7 +109,7 @@ calico/typha: bin/calico-typha-$(ARCH) register
 	rm -rf docker-image/bin
 	mkdir -p docker-image/bin
 	cp bin/calico-typha-$(ARCH) docker-image/bin/
-	docker build --pull -t calico/typha:latest-$(ARCH) docker-image -f docker-image/Dockerfile-$(ARCH)
+	docker build --pull -t calico/typha:latest-$(ARCH) docker-image -f docker-image/Dockerfile.$(ARCH)
 
 # Pre-configured docker run command that runs as this user with the repo
 # checked out to /code, uses the --rm flag to avoid leaving the container
