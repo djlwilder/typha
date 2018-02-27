@@ -229,23 +229,23 @@ go-meta-linter: vendor/.up-to-date $(GENERATED_GO_FILES)
 static-checks:
 	$(MAKE) go-meta-linter check-licenses
 
-.PHONY: ut-no-cover native
-ut-no-cover: vendor/.up-to-date $(TYPHA_GO_FILES)
+.PHONY: ut-no-cover
+ut-no-cover: native vendor/.up-to-date $(TYPHA_GO_FILES) 
 	@echo Running Go UTs without coverage.
 	$(DOCKER_GO_BUILD) ginkgo -r $(GINKGO_OPTIONS)
 
-.PHONY: ut-watch native
-ut-watch: vendor/.up-to-date $(TYPHA_GO_FILES)
+.PHONY: ut-watch
+ut-watch: native vendor/.up-to-date $(TYPHA_GO_FILES)
 	@echo Watching go UTs for changes...
 	$(DOCKER_GO_BUILD) ginkgo watch -r $(GINKGO_OPTIONS)
 
 # Launch a browser with Go coverage stats for the whole project.
-.PHONY: cover-browser native
-cover-browser: combined.coverprofile
+.PHONY: cover-browser
+cover-browser: native combined.coverprofile
 	go tool cover -html="combined.coverprofile"
 
-.PHONY: cover-report native
-cover-report: combined.coverprofile
+.PHONY: cover-report
+cover-report: native combined.coverprofile
 	# Print the coverage.  We use sed to remove the verbose prefix and trim down
 	# the whitespace.
 	@echo
